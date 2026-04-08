@@ -45,7 +45,8 @@ public class AISearchService {
             // 3. 准备发送 HTTP 请求 (带有超时设置)
             org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
             requestFactory.setConnectTimeout(10000); // 10秒连接超时
-            requestFactory.setReadTimeout(60000);    // 30秒读取超时
+            // 👇 【修改1】把耐心拉到绝对极限的 120 秒，坚决不让它半路挂断！
+            requestFactory.setReadTimeout(120000);
             RestTemplate restTemplate = new RestTemplate(requestFactory);
 
             HttpHeaders headers = new HttpHeaders();
@@ -56,6 +57,11 @@ public class AISearchService {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", "ep-20260407221843-lc6pd");
             requestBody.put("temperature", 0.0);
+
+            // 👇 【修改2，超级关键！】给大模型戴上“紧箍咒”，绝对不允许它生成超过 50 个词！
+            // 只要它写到 50 个词，管它写没写完，强制让它停下并把数据返回！
+            requestBody.put("max_tokens", 50);
+
             requestBody.put("messages", List.of(
                     Map.of("role", "system", "content", systemMsg),
                     Map.of("role", "user", "content", userMsg)
@@ -96,6 +102,7 @@ public class AISearchService {
 
             // 现在的 aiContent 绝对是纯净的 JSON 了，放心解析
             JsonNode parsedJson = mapper.readTree(aiContent);
+            // ... 前面的代码保持不变 ...
             List<String> candidates = new ArrayList<>();
             if (parsedJson.isArray()) {
                 for (JsonNode node : parsedJson) {
@@ -103,10 +110,37 @@ public class AISearchService {
                 }
             }
 
+            // 👇👇👇 替换成这套带有“去空格”和“保底机制”的无敌匹配逻辑 👇👇👇
+            List<HardwareItem> finalItems = new ArrayList<>();
+            for (String name : candidates) {
+                // 1. 去掉 AI 给的名字的隐形空格
+                String cleanName = name.trim();
+
+                HardwareItem matchedItem = items.stream()
+                        // 2. 去掉数据库里名字的隐形空格，并且忽略大小写进行比对
+                        .filter(item -> item.getName() != null && item.getName().trim().equalsIgnoreCase(cleanName))
+                        .findFirst()
+                        .orElse(null);
+
+                if (matchedItem != null) {
+                    // 找到了完美的数据库记录，加进去！
+                    finalItems.add(matchedItem);
+                } else {
+                    // 🚨 保底防线：如果还是没匹配上，绝对不能返回空！造一个临时的展示出来！
+                    HardwareItem dummy = new HardwareItem();
+                    dummy.setName(cleanName);
+                    dummy.setLocation("未知位置 (可能名字有微小差异)");
+                    finalItems.add(dummy);
+
+                    System.out.println("⚠️ 警告：数据库中未匹配到精准名字 -> " + cleanName);
+                }
+            }
+
             // 7. 打包返回给前端
             result.put("ok", true);
-            result.put("candidates", candidates);
+            result.put("candidates", finalItems);
             result.put("detail", parsedJson);
+            // 👆👆👆 替换结束 👆👆👆
 
             System.out.println("🎉 解析成功！结果已返回给前端。");
             return result;
