@@ -28,21 +28,30 @@ public class HardwareItemController {
         return repository.findAll();
     }
 
-    // ... addItem 方法修改如下 ...
+    // ... 在 HardwareItemController.java 中找到 addItem 方法 ...
+
     @PostMapping("/add")
     public HardwareItem addItem(@RequestBody HardwareItem item) {
+        // 1. 去掉空格
         String cleanName = item.getName() != null ? item.getName().trim() : "";
         item.setName(cleanName);
 
-        // 【修改】合并逻辑：名称、品牌、价格完全一致才合并库存
+        // 2. 匹配：名称、品牌、价格一致
         Optional<HardwareItem> existingOpt = repository.findByNameAndBrandAndPrice(
                 item.getName(), item.getBrand(), item.getPrice()
         );
 
         if (existingOpt.isPresent()) {
             HardwareItem dbItem = existingOpt.get();
+            // 增加库存
             dbItem.setStock(dbItem.getStock() + item.getStock());
-            // 如果是合并，通常位置以第一次入库或最新修改为准
+
+            // 【关键修复点】只有当新传入的位置不为空时，才更新位置
+            // 这样当你合并已有商品时，dbItem 会保留它原本的货架信息
+            if (item.getLocation() != null && !item.getLocation().trim().isEmpty()) {
+                dbItem.setLocation(item.getLocation());
+            }
+
             return repository.save(dbItem);
         } else {
             // 全新商品，直接保存
