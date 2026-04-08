@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController // 告诉 Spring：这是一个可以接收网址请求的“接待员”
 @RequestMapping("/api/hardware") // 给这个接待员安排一个专属的工作窗口地址
@@ -41,9 +42,28 @@ public class HardwareItemController {
         // 交给军师处理！
         return aiSearchService.search(query, limit);
     }
-    // 接口 2：添加一个新工具 (方便我们等下测试)
+    // 接口 2：添加/更新工具 (自动去重逻辑)
     @PostMapping("/add")
     public HardwareItem addItem(@RequestBody HardwareItem item) {
-        return repository.save(item);
+        // 1. 清洗数据：去掉名称中的横杠和数字（防止店员手动输入带后缀的名字）
+        String cleanName = item.getName().replaceAll("[-0-9]+", "").trim();
+        item.setName(cleanName);
+
+        // 2. 在数据库中寻找是否已有：名称、品牌、规格完全一致的商品
+        Optional<HardwareItem> existingOpt = repository.findByNameAndBrandAndModel(
+                item.getName(), item.getBrand(), item.getModel()
+        );
+
+        if (existingOpt.isPresent()) {
+            // 3. 如果找到了，就在原有库存基础上增加，并更新价格和位置
+            HardwareItem dbItem = existingOpt.get();
+            dbItem.setStock(dbItem.getStock() + item.getStock());
+            dbItem.setPrice(item.getPrice()); // 以最新的进货价为准
+            dbItem.setLocation(item.getLocation()); // 更新最新货架位置
+            return repository.save(dbItem);
+        } else {
+            // 4. 如果没找到，则是一个全新的商品，直接保存（JPA会自动生成新ID）
+            return repository.save(item);
+        }
     }
 }

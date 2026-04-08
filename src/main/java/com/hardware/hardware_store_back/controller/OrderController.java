@@ -101,4 +101,13 @@ public class OrderController {
         }
         return Map.of("ok", false, "error", "订单不存在");
     }
+    // 5. 获取销售历史流水（已完成和已取消的订单）
+    @GetMapping("/history")
+    public List<SalesOrder> getOrderHistory() {
+        // 为了省事，我们直接把所有非待处理（状态不为 0）的订单拿出来作为流水
+        return orderRepository.findAll().stream()
+                .filter(order -> order.getStatus() != 0)
+                .sorted((a, b) -> b.getCreateTime().compareTo(a.getCreateTime())) // 按时间倒序
+                .toList();
+    }
 }
