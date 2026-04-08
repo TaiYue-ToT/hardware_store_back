@@ -110,29 +110,40 @@ public class AISearchService {
                 }
             }
 
-            // 👇👇👇 替换成这套带有“去空格”和“保底机制”的无敌匹配逻辑 👇👇👇
+
+
+            // 👇👇👇 升级版：无视“-数字”后缀的超级模糊匹配 👇👇👇
             List<HardwareItem> finalItems = new ArrayList<>();
             for (String name : candidates) {
-                // 1. 去掉 AI 给的名字的隐形空格
-                String cleanName = name.trim();
+                // 1. 去掉 AI 名字里可能带的空格，并“一刀斩断”横杠后面的数字
+                String cleanAiName = name.trim().split("-")[0].trim();
 
                 HardwareItem matchedItem = items.stream()
-                        // 2. 去掉数据库里名字的隐形空格，并且忽略大小写进行比对
-                        .filter(item -> item.getName() != null && item.getName().trim().equalsIgnoreCase(cleanName))
+                        .filter(item -> {
+                            if (item.getName() == null) return false;
+                            // 2. 同样，把数据库里的名字也“斩断”横杠
+                            String dbBaseName = item.getName().trim().split("-")[0].trim();
+
+                            // 3. 只要基础名字一样，或者互相包含，就算匹配成功！
+                            return dbBaseName.equalsIgnoreCase(cleanAiName) ||
+                                    dbBaseName.contains(cleanAiName) ||
+                                    cleanAiName.contains(dbBaseName);
+                        })
                         .findFirst()
                         .orElse(null);
 
                 if (matchedItem != null) {
-                    // 找到了完美的数据库记录，加进去！
+                    // 匹配成功！
                     finalItems.add(matchedItem);
                 } else {
-                    // 🚨 保底防线：如果还是没匹配上，绝对不能返回空！造一个临时的展示出来！
+                    // 🚨 终极保底
                     HardwareItem dummy = new HardwareItem();
-                    dummy.setName(cleanName);
-                    dummy.setLocation("未知位置 (可能名字有微小差异)");
+                    dummy.setName(name.trim());
+                    dummy.setLocation("未知位置 (匹配失败)");
+                    dummy.setPrice(java.math.BigDecimal.ZERO);
+                    dummy.setStock(0);
                     finalItems.add(dummy);
-
-                    System.out.println("⚠️ 警告：数据库中未匹配到精准名字 -> " + cleanName);
+                    System.out.println("⚠️ 警告：斩尾模糊匹配也失败了 -> " + name);
                 }
             }
 
@@ -140,7 +151,6 @@ public class AISearchService {
             result.put("ok", true);
             result.put("candidates", finalItems);
             result.put("detail", parsedJson);
-            // 👆👆👆 替换结束 👆👆👆
 
             System.out.println("🎉 解析成功！结果已返回给前端。");
             return result;
